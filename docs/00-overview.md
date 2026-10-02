@@ -31,7 +31,7 @@ flowchart LR
 | [05-tooling.md](05-tooling.md) | Helm, Kustomize, Argo CD 역할 분담과 사용법 |
 | [06-labs.md](06-labs.md) | 실습 시나리오 15개 |
 | [07-to-ubuntu-server.md](07-to-ubuntu-server.md) | k3s/kubeadm 서버로 옮길 때 바뀌는 점 |
-| [08-faq.md](08-faq.md) | 처음 접할 때 헷갈리는 것들 (환경, 설치 위치, 스케줄링, 확장, 데이터/메시징) |
+| [08-faq.md](08-faq.md) | 처음 접할 때 헷갈리는 것들 (환경, 설치 위치, 스케줄링, 확장, 데이터/메시징, 배포 명령) |
 
 ## 컴포넌트 커버리지
 

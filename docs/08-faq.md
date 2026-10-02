@@ -6,6 +6,7 @@
 - [B. 어디에 설치되고, 어디서 실행되나](#b-어디에-설치되고-어디서-실행되나)
 - [C. 확장](#c-확장)
 - [D. 데이터와 메시징](#d-데이터와-메시징)
+- [E. 배포 명령 읽기 (Lab 2)](#e-배포-명령-읽기-lab-2)
 
 ---
 
@@ -82,6 +83,43 @@ kind load docker-image k8s-lab/payment-api:$TAG --name k8s-lab
 docker exec k8s-lab-worker crictl images | grep k8s-lab   # 노드에 들어갔는지 확인
 ```
 레지스트리에서 받지 않고 노드에 미리 넣은 이미지를 쓰는 방식이라 `imagePullPolicy: IfNotPresent`가 필수입니다(`Always`면 레지스트리에서 받으려다 실패). 코드를 바꿨다면 **빌드와 load를 다시** 해야 합니다.
+
+### A-9. 이미지를 빌드하고 `kind load`까지 했는데 `kubectl get pods -A`에 앱 Pod가 안 보여요
+**정상입니다.** Lab 2-1은 이미지를 노드의 containerd 저장소에 **넣어 두기만** 합니다. 그 이미지로 Pod를 띄우라는 리소스(Deployment, StatefulSet)가 아직 클러스터에 없습니다.
+```
+docker build  → 호스트 dockerd에 이미지 생성
+kind load     → 노드의 containerd 저장소로 복사       ← 여기까지는 Pod 없음
+helm install  → API 서버에 Deployment 제출 → scheduler → kubelet이 Pod 실행  ← 이때 나타남
+```
+Spring으로 비유하면 jar를 서버에 복사만 하고 `java -jar`는 실행하지 않은 상태입니다. Argo CD Pod가 떠 있어도 `Application`을 등록하기 전까지는 아무것도 배포하지 않습니다([B-5](#b-5-argo-cd는-control-plane-안에-설치되나요-jenkins와-비슷한-건가요)). Pod는 Lab 2-2(`data-dev`: mysql, kafka)와 Lab 2-4(`payment-dev`: 앱 3개)에서 생깁니다.
+```bash
+docker exec k8s-lab-worker crictl images | grep k8s-lab   # 이미지 3개가 $TAG로 보이면 2-1 성공
+```
+
+### A-10. `crictl`은 어떤 프로세스를 부르는 명령인가요?
+**노드 컨테이너 안에 들어 있는 CLI 프로그램**입니다. 상주하는 데몬이 아니라, 실행하면 노드 안의 **containerd**에 질의하고 결과를 출력한 뒤 바로 끝납니다.
+```
+docker exec k8s-lab-worker ...       ← 호스트 dockerd에게 "이 컨테이너 안에서 실행해 줘" (통로일 뿐)
+ └─ crictl images                     ← 노드 안에서 새 프로세스로 실행
+      │ gRPC (CRI API)
+      ▼
+    /run/containerd/containerd.sock → containerd (상주 데몬, 이미지 목록을 가진 쪽)
+      ▲
+    kubelet도 같은 소켓과 같은 API로 Pod를 만든다
+```
+- 이름은 **C**ontainer **R**untime **I**nterface **c**on**t**ro**l**에서 왔습니다. CRI는 kubelet이 런타임(containerd, CRI-O)과 대화하는 표준 API이고, crictl은 **kubelet과 같은 API로 말을 거는 디버깅 도구**입니다. 그래서 kubelet이 보는 Pod sandbox, 컨테이너, 이미지를 그대로 볼 수 있습니다.
+- 접속할 소켓은 노드의 `/etc/crictl.yaml`에 설정되어 있습니다. 실제 서버(k3s, kubeadm)에서는 노드에 SSH로 들어가 `sudo crictl images`를 바로 실행합니다.
+
+| 도구 | 붙는 곳 | 용도 |
+|---|---|---|
+| `docker` | 호스트 dockerd | 이미지 빌드 |
+| `crictl` | containerd의 CRI 플러그인 | K8s 관점(Pod 단위)의 디버깅 |
+| `ctr` | containerd 네이티브 API | 더 저수준. K8s 이미지는 `ctr -n k8s.io images ls`로 봐야 함. `kind load`가 내부적으로 `ctr ... images import`를 씀 |
+```bash
+docker exec k8s-lab-worker which crictl
+docker exec k8s-lab-worker cat /etc/crictl.yaml
+docker exec k8s-lab-worker ps -e | grep -E 'containerd|kubelet'   # 상주 데몬 (crictl은 없음)
+```
 
 ---
 
@@ -281,3 +319,106 @@ MySQL에서는 IDENTITY가 맞습니다. SEQUENCE의 장점은 진짜 시퀀스�
 - 초기 계좌는 `data.sql`이 넣습니다(`defer-datasource-initialization`으로 DDL 이후에 실행).
 - payment-api는 `ddl-auto: none`입니다. `api_ro` 계정은 SELECT 권한뿐이라 DDL을 실행할 수도 없습니다.
 - MySQL init 스크립트(`02-readonly-user.sh`)는 **데이터 디렉터리가 비어 있을 때만** 실행됩니다. PVC나 볼륨이 남아 있으면 다시 실행되지 않습니다. compose에서는 `docker compose down -v`, kind에서는 PVC 삭제가 필요합니다.
+
+---
+
+## E. 배포 명령 읽기 (Lab 2)
+
+### E-1. Lab 2-2의 `kubectl kustomize` → `apply -k` → 대기 명령은 각각 무엇을 하나요?
+**앞의 두 줄은 "미리보기"와 "적용"이고, 뒤의 세 줄은 "다 뜰 때까지 기다림"입니다.**
+
+> ⚠️ `$D`는 06-labs 맨 위의 `export A=payment-dev D=data-dev`에서 정의됩니다. 새 터미널에서 이 줄을 빼먹으면 `-n --timeout=300s`가 되어, **`--timeout=300s`가 namespace 이름으로 해석됩니다.** `echo $D`로 먼저 확인하세요.
+
+**1) `kubectl kustomize deploy/kustomize/data/overlays/dev | less`** — 클러스터에 아무것도 보내지 않고, WSL 안에서 최종 YAML만 조립해 출력합니다.
+```
+overlays/dev/kustomization.yaml
+ ├─ resources: namespace.yaml        → Namespace data-dev
+ ├─ resources: ../../base            → base를 먼저 조립
+ │    ├─ policies/  ResourceQuota, LimitRange, NetworkPolicy, ServiceAccount·Role·RoleBinding
+ │    ├─ mysql/     StatefulSet, Service
+ │    ├─ kafka/     StatefulSet, Service ×2
+ │    ├─ jobs/      Job kafka-topic-init, CronJob balance-reconcile
+ │    └─ configMapGenerator: 파일 → ConfigMap (이름 뒤에 내용 해시)
+ ├─ namespace: data-dev              → 모든 리소스의 namespace를 덮어씀
+ ├─ labels: k8slab.dev/env=dev
+ └─ secretGenerator: mysql-credentials
+```
+- base YAML에는 namespace가 없습니다. overlay가 채우므로 같은 base로 `data-prod`도 만들 수 있습니다.
+- Secret은 base64 **인코딩**일 뿐 암호화가 아닙니다(`echo cm9vdC1wYXNz | base64 -d` → `root-pass`).
+- `less`는 `Space` 다음 페이지, `/mysql` 검색, `q` 종료. 종류만 보려면 `| grep '^kind:'`를 쓰세요.
+
+**2) `kubectl apply -k ...`** — 1)과 같은 YAML을 API 서버에 제출합니다. 원하는 상태를 etcd에 저장하고 **바로 끝납니다.** 실제 작업은 그 뒤에 컨트롤러들이 비동기로 처리합니다.
+```
+StatefulSet 컨트롤러 → mysql-0, kafka-0 생성 + volumeClaimTemplates로 PVC(data-mysql-0, data-kafka-0)
+local-path-provisioner → PVC에 맞는 PV를 노드 디스크에 생성
+scheduler → nodeAffinity tier=data → k8s-lab-worker2
+kubelet → mysql:8.4, apache/kafka 이미지를 Docker Hub에서 pull (kind load한 이미지가 아님 → 처음엔 느림)
+Job 컨트롤러 → kafka-topic-init Pod (브로커가 응답할 때까지 3초마다 재시도한 뒤 토픽 3개 생성, --if-not-exists라 멱등)
+```
+mysql-0은 데이터 디렉터리가 비어 있는 첫 기동에만 `payments` DB와 `worker`, `api_ro` 계정을 만듭니다. 테이블은 balance-worker가 만듭니다([D-6](#d-6-스키마는-누가-만들고-언제-초기화되나요)).
+
+**3) `kubectl rollout status statefulset/mysql -n $D --timeout=300s`** — 모든 replica가 **Ready**가 될 때까지 기다립니다. Ready는 readinessProbe(`mysqladmin ping`)를 통과했다는 뜻입니다. 컨테이너가 떠 있는 것(Running)과는 다릅니다. 5분이 지나면 exit 1로 끝나고, 아무것도 고치지 않습니다.
+
+**4) `... statefulset/kafka ...`** — 3)과 같습니다. Kafka의 probe는 9092 포트에 TCP 연결이 되는지만 봅니다.
+
+**5) `kubectl wait --for=condition=complete job/kafka-topic-init ...`** — Job은 rollout이 없는 일회성 작업이라 범용 대기 명령인 `wait`을 씁니다. Job이 성공하면 `status.conditions`에 `Complete`가 기록됩니다. 실패하면 `backoffLimit: 6`까지 재시도한 뒤 `Failed`가 되고, `wait`은 timeout으로 끝납니다.
+
+> K8s 명령은 대부분 "선언하고 바로 끝남"입니다. 그래서 스크립트나 CI에서는 `apply` 뒤에 `rollout status`나 `wait`이 거의 항상 붙습니다. 리소스는 동시에 만들어지므로, 대기 명령의 순서는 "어디서 막혔는지" 알기 쉽게 하려는 것입니다.
+```bash
+kubectl get pods,pvc -n $D -o wide       # NODE가 k8s-lab-worker2인지, PVC가 Bound인지
+kubectl describe pod mysql-0 -n $D       # Pending이면 맨 아래 Events
+kubectl logs -n $D job/kafka-topic-init  # "topics ready"
+```
+
+### E-2. `kubectl rollout status statefulset/mysql`의 StatefulSet은 어디서 정의된 건가요?
+**`deploy/kustomize/data/base/mysql/statefulset.yaml`입니다.** 바로 앞의 `apply -k`가 이 정의를 클러스터에 등록했습니다.
+
+| 명령의 부분 | 출처 |
+|---|---|
+| `statefulset` (종류) | 파일의 `kind: StatefulSet` |
+| `mysql` (이름) | 파일의 `metadata.name: mysql` |
+| `-n data-dev` | 파일에는 없음. dev overlay의 `namespace:`가 붙임 |
+```
+overlays/dev/kustomization.yaml → resources: ../../base
+base/kustomization.yaml         → resources: mysql/statefulset.yaml
+kubectl apply -k overlays/dev   → API 서버 → etcd에 저장
+kubectl rollout status ...      → API 서버에 "data-dev의 mysql"을 이름으로 조회 (파일을 읽지 않음)
+```
+- apply 이후로 StatefulSet은 **클러스터 안의 객체**입니다. `get`, `rollout`, `describe`는 파일과 상관없이 어느 디렉터리에서 실행해도 결과가 같습니다.
+- 이름은 namespace마다 따로 있습니다. `-n`을 빼면 `default`에서 찾아서 `NotFound`가 납니다.
+- StatefulSet, Service, 라벨 값이 모두 `mysql`인 건 관례일 뿐입니다. 실제로 연결하는 건 `serviceName` 필드와 라벨 selector입니다.
+```bash
+kubectl get statefulset mysql -n $D -o yaml   # 저장된 정의: 해시 붙은 ConfigMap 이름, 기본값, status까지 포함
+```
+
+### E-3. Lab 2-4의 helm 명령은 세 앱을 모두 같은 태그로 배포하나요?
+**네. 이 차트는 태그를 `global.imageTag` 하나만 받습니다.** 세 템플릿이 모두 같은 helper를 씁니다.
+```
+# deploy/helm/payment-apps/templates/_helpers.tpl
+{{- printf "%s%s:%s" .root.Values.global.imageRegistry .image .root.Values.global.imageTag -}}
+```
+| 앱 | 이미지 이름 (앱별) | 태그 (공통) |
+|---|---|---|
+| frontend | `k8s-lab/frontend` | `$TAG` |
+| payment-api | `k8s-lab/payment-api` | `$TAG` |
+| balance-worker | `k8s-lab/balance-worker` | `$TAG` |
+
+값은 아래로 갈수록 우선합니다.
+```
+values.yaml                  global.imageTag: dev
+-f values-dev.yaml           global.imageTag: dev
+--set global.imageTag=$TAG   ← 최종 값
+```
+- `--set`을 빼먹으면 태그가 `dev`가 되어 Pod가 이미지를 찾지 못합니다([A-8](#a-8-docker-build로-이미지를-만들었는데-pod가-errimagepull이에요)). `helm template ... | grep 'image:'`로 먼저 확인하세요.
+- 그래서 Lab 2-1에서 세 이미지를 모두 같은 `$TAG`로 빌드합니다. 한 앱만 고쳐도 커밋이 바뀌면 `$TAG`가 바뀌므로, 세 이미지를 모두 다시 빌드하고 load해야 합니다.
+- 태그가 바뀌면 Pod 템플릿의 `image`가 바뀌므로 **세 Deployment가 모두 롤링 업데이트**됩니다. `app.kubernetes.io/version` 라벨도 같은 태그를 씁니다.
+- 실무에서는 앱별 태그(`paymentApi.image.tag`)를 두고 비어 있으면 global 값을 쓰는 방식(`default`)이 흔합니다.
+
+나머지 옵션은 다음과 같습니다.
+- `upgrade --install`: release가 없으면 설치, 있으면 업그레이드합니다(멱등).
+- `-n $A`: namespace는 Lab 2-3에서 만든 것을 씁니다(`--create-namespace` 없음).
+- `serviceMonitor.enabled=$MON`: CRD가 없는데 `true`로 하면 API 서버가 그 종류를 몰라서 실패합니다.
+- `--wait --timeout 10m`: 모든 Deployment가 Ready가 될 때까지 기다립니다(`rollout status`와 같은 역할).
+```bash
+kubectl get deploy -n $A -o custom-columns=NAME:.metadata.name,IMAGE:.spec.template.spec.containers[0].image
+```

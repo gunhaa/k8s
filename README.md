@@ -86,4 +86,4 @@ docs/                  학습 문서 (mermaid 다이어그램 포함)
 | [05 도구](docs/05-tooling.md) | Helm, Kustomize, Argo CD |
 | [06 실습](docs/06-labs.md) | 15개 실습 시나리오 |
 | [07 서버 이전](docs/07-to-ubuntu-server.md) | k3s/kubeadm으로 옮기기 |
-| [08 FAQ](docs/08-faq.md) | **처음 접할 때 헷갈리는 것들**: kind·helm·Argo CD 동작 위치, 스케줄링, 확장, Kafka offset, reconcile |
+| [08 FAQ](docs/08-faq.md) | **처음 접할 때 헷갈리는 것들**: kind·helm·Argo CD 동작 위치, 스케줄링, 확장, Kafka offset, reconcile, Lab 2 배포 명령 |
