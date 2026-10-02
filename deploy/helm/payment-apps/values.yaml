@@ -60,6 +60,10 @@ balanceWorker:
   image: k8s-lab/balance-worker
   # 파티션이 3개라 4개 이상은 놀게 된다 (consumer group 내 파티션당 1 consumer)
   replicas: 1
+  # Hibernate 스키마 관리 (spring.jpa.hibernate.ddl-auto)
+  #   create: Pod가 뜰 때마다 테이블 DROP → 재생성 (데이터 초기화). replica 1개일 때만 안전
+  #   update: 없으면 만들고 기존 데이터는 유지
+  ddlAuto: create
   resources:
     requests: { cpu: 100m, memory: 384Mi }
     limits: { memory: 512Mi }

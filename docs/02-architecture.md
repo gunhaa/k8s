@@ -122,18 +122,20 @@ flowchart TB
 erDiagram
   accounts ||--o{ payment_ledger : "user_id"
   accounts {
-    varchar user_id PK
+    bigint id PK "AUTO_INCREMENT"
+    varchar user_id UK
     bigint balance "CHECK >= 0"
     bigint initial_balance
     datetime updated_at
   }
   payment_ledger {
-    varchar payment_id PK "멱등성 키"
+    bigint id PK "AUTO_INCREMENT"
+    varchar payment_id UK "멱등성 키"
     varchar user_id
     varchar type "CHARGE | PAYMENT"
     bigint amount
     bigint delta "+amount | -amount"
-    varchar status "PROCESSING | COMPLETED | REJECTED"
+    varchar status "COMPLETED | REJECTED"
     bigint balance_after
     varchar reason
     datetime requested_at
@@ -142,6 +144,8 @@ erDiagram
 ```
 
 정합성 규칙(CronJob이 점검): `accounts.balance = initial_balance + SUM(delta WHERE status='COMPLETED')`
+
+스키마는 balance-worker의 JPA 엔티티(`Account`, `PaymentLedger`)가 소유하며 `spring.jpa.hibernate.ddl-auto`(기본 `create`: 기동 시마다 DROP → 재생성)로 만들어지고, 초기 계좌는 `data.sql`로 들어갑니다. id는 `GenerationType.IDENTITY`(MySQL `AUTO_INCREMENT`)로 생성합니다.
 
 ## 5. Kafka 토픽
 

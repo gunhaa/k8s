@@ -184,7 +184,7 @@ flowchart LR
 
 ### ConfigMap
 설정 데이터입니다. env 또는 **파일(볼륨)**로 주입합니다.
-- `mysql-initdb`: SQL/쉘 스크립트 → `/docker-entrypoint-initdb.d` (Kustomize `configMapGenerator`, 이름에 해시가 붙음)
+- `mysql-initdb`: 계정 생성 쉘 스크립트 → `/docker-entrypoint-initdb.d` (테이블은 balance-worker JPA가 생성) (Kustomize `configMapGenerator`, 이름에 해시가 붙음)
 - `frontend-config`: `config.js`, `default.conf`를 `subPath`로 파일 하나씩 덮어씀 (Helm, `checksum/config` 어노테이션)
 ```bash
 kubectl get cm -n data-dev     # mysql-initdb-7ggh29h2kf 처럼 해시 접미사

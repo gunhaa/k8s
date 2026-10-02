@@ -39,12 +39,12 @@ sequenceDiagram
   K->>W: poll() payment.requested
   activate W
   W->>D: BEGIN
-  W->>D: INSERT payment_ledger (payment_id PK)
+  W->>D: SELECT ledger WHERE payment_id=? (있으면 저장된 결과 반환)
   W->>D: UPDATE accounts SET balance = balance + delta<br/>WHERE user_id=? AND balance + delta >= 0
   alt 1 row updated
-    W->>D: UPDATE ledger status=COMPLETED, balance_after
+    W->>D: INSERT ledger status=COMPLETED, balance_after
   else 0 rows (잔고 부족 / 계좌 없음)
-    W->>D: UPDATE ledger status=REJECTED, reason
+    W->>D: INSERT ledger status=REJECTED, reason
   end
   W->>D: COMMIT
   W->>K: send(payment.result) 동기 대기
@@ -204,20 +204,21 @@ sequenceDiagram
   participant D as MySQL
 
   K->>W1: payment p1 (offset 42)
-  W1->>D: BEGIN / INSERT ledger / UPDATE balance / COMMIT ✅
+  W1->>D: BEGIN / UPDATE balance / INSERT ledger / COMMIT ✅
   W1--xK: 💥 Pod 종료 (result 발행·offset 커밋 전)
   Note over K: offset 42 미커밋 → 재전달 대상
   Note over W2: Deployment가 새 Pod 생성<br/>consumer group rebalance
   K->>W2: payment p1 (offset 42) 다시 전달
-  W2->>D: INSERT ledger p1
-  D-->>W2: DuplicateKeyException (PK 충돌)
-  W2->>D: SELECT 저장된 결과
+  W2->>D: SELECT ledger WHERE payment_id = p1
+  D-->>W2: 이미 있음 (이전 처리 결과)
   W2->>K: payment.result p1 (이전과 같은 결과) 재발행
   W2->>K: offset 42 커밋
   Note over D: 잔고는 한 번만 반영됨 ✅
 ```
 
-Kafka의 기본 보장은 **at-least-once**(최소 한 번)입니다. 그래서 consumer는 **멱등(idempotent)**해야 합니다. 이 프로젝트는 `payment_ledger.payment_id` PK로 멱등성을 구현합니다.
+Kafka의 기본 보장은 **at-least-once**(최소 한 번)입니다. 그래서 consumer는 **멱등(idempotent)**해야 합니다. 이 프로젝트는 `payment_ledger.payment_id` **UNIQUE 제약**으로 멱등성을 구현합니다 (PK는 `AUTO_INCREMENT`로 생성하는 `id`). 먼저 조회해서 있으면 저장된 결과를 돌려주고, 두 consumer가 동시에 같은 결제를 처리하는 경합은 UNIQUE 위반 → 트랜잭션 롤백(잔고 반영 포함) → 재시도로 막습니다.
+
+> ⚠️ dev는 `balanceWorker.ddlAuto: create`라 worker Pod가 **새로 뜰 때마다 테이블이 DROP/재생성**됩니다. 이 시나리오(새 Pod가 재전달 메시지 처리)를 관찰하려면 `--set balanceWorker.ddlAuto=update`로 배포하세요.
 
 ### 5-2. 잘못된 메시지 → 재시도 → DLT
 

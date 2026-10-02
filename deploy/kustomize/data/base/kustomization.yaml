@@ -23,7 +23,6 @@ resources:
 configMapGenerator:
   - name: mysql-initdb
     files:
-      - mysql/initdb/01-schema.sql
       - mysql/initdb/02-readonly-user.sh
   - name: kafka-scripts
     files:

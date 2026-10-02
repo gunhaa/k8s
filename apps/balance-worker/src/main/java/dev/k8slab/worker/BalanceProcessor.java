@@ -1,24 +1,24 @@
 package dev.k8slab.worker;
 
-import java.sql.Timestamp;
 import java.time.Instant;
+import java.util.Optional;
 
-import org.springframework.dao.DuplicateKeyException;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 결제 이벤트 하나를 하나의 DB 트랜잭션으로 처리한다.
- * payment_ledger.payment_id(PK)로 중복 처리를 막는다 (Kafka at-least-once 전달 대비).
+ * payment_ledger.payment_id(UNIQUE)로 중복 처리를 막는다 (Kafka at-least-once 전달 대비).
  */
 @Component
 public class BalanceProcessor {
 
-    private final JdbcTemplate jdbc;
+    private final AccountRepository accounts;
+    private final PaymentLedgerRepository ledger;
 
-    public BalanceProcessor(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
+    public BalanceProcessor(AccountRepository accounts, PaymentLedgerRepository ledger) {
+        this.accounts = accounts;
+        this.ledger = ledger;
     }
 
     @Transactional
@@ -32,55 +32,38 @@ public class BalanceProcessor {
             throw new IllegalArgumentException("amount must be positive: " + event.amount());
         }
 
-        // 1) 원장에 먼저 기록 → 이미 있으면 재전송된 메시지이므로 저장된 결과를 그대로 돌려준다
-        try {
-            jdbc.update("""
-                    INSERT INTO payment_ledger (payment_id, user_id, type, amount, delta, status, requested_at)
-                    VALUES (?, ?, ?, ?, ?, 'PROCESSING', ?)
-                    """, event.paymentId(), event.userId(), event.type(), event.amount(), delta,
-                    Timestamp.from(event.requestedAt()));
-        } catch (DuplicateKeyException alreadyProcessed) {
-            return loadExisting(event);
+        // 1) 이미 원장에 있으면 재전송된 메시지이므로 저장된 결과를 그대로 돌려준다
+        Optional<PaymentLedger> existing = ledger.findByPaymentId(event.paymentId());
+        if (existing.isPresent()) {
+            return toResult(event, existing.get());
         }
 
         // 2) 조건부 UPDATE 한 문장으로 잔고 부족을 원자적으로 판정
-        int updated = jdbc.update("""
-                UPDATE accounts SET balance = balance + ?, updated_at = NOW(6)
-                WHERE user_id = ? AND balance + ? >= 0
-                """, delta, event.userId(), delta);
+        Instant now = Instant.now();
+        int updated = accounts.applyDelta(event.userId(), delta, now);
 
         String status;
         String reason = null;
         Long balanceAfter = null;
         if (updated == 1) {
             status = "COMPLETED";
-            balanceAfter = jdbc.queryForObject("SELECT balance FROM accounts WHERE user_id = ?", Long.class,
-                    event.userId());
+            balanceAfter = accounts.findByUserId(event.userId()).map(Account::getBalance).orElseThrow();
         } else {
             status = "REJECTED";
-            Integer exists = jdbc.queryForObject("SELECT COUNT(*) FROM accounts WHERE user_id = ?", Integer.class,
-                    event.userId());
-            reason = (exists != null && exists > 0) ? "insufficient balance" : "account not found";
+            reason = accounts.existsByUserId(event.userId()) ? "insufficient balance" : "account not found";
         }
 
-        jdbc.update("""
-                UPDATE payment_ledger SET status = ?, balance_after = ?, reason = ?, processed_at = NOW(6)
-                WHERE payment_id = ?
-                """, status, balanceAfter, reason, event.paymentId());
+        // 3) 원장 기록. 두 consumer가 동시에 같은 결제를 처리하면(rebalance 경합) UNIQUE 위반으로
+        //    트랜잭션 전체(잔고 반영 포함)가 롤백되고, 재시도 시 1)에서 기존 결과를 돌려준다.
+        PaymentLedger saved = ledger.saveAndFlush(new PaymentLedger(event.paymentId(), event.userId(), event.type(),
+                event.amount(), delta, status, balanceAfter, reason, event.requestedAt(), now));
 
-        return new PaymentEvents.Result(event.paymentId(), event.userId(), event.type(), event.amount(), status,
-                balanceAfter, reason, event.requestedAt(), Instant.now());
+        return toResult(event, saved);
     }
 
-    private PaymentEvents.Result loadExisting(PaymentEvents.Requested event) {
-        return jdbc.queryForObject("""
-                SELECT status, balance_after, reason, processed_at FROM payment_ledger WHERE payment_id = ?
-                """, (rs, i) -> {
-            Timestamp processedAt = rs.getTimestamp("processed_at");
-            long balanceAfter = rs.getLong("balance_after");
-            return new PaymentEvents.Result(event.paymentId(), event.userId(), event.type(), event.amount(),
-                    rs.getString("status"), rs.wasNull() ? null : balanceAfter, rs.getString("reason"),
-                    event.requestedAt(), processedAt != null ? processedAt.toInstant() : Instant.now());
-        }, event.paymentId());
+    private PaymentEvents.Result toResult(PaymentEvents.Requested event, PaymentLedger entry) {
+        return new PaymentEvents.Result(event.paymentId(), event.userId(), event.type(), event.amount(),
+                entry.getStatus(), entry.getBalanceAfter(), entry.getReason(), event.requestedAt(),
+                entry.getProcessedAt() != null ? entry.getProcessedAt() : Instant.now());
     }
 }

@@ -15,6 +15,22 @@ spring:
     hikari:
       maximum-pool-size: 5
       initialization-fail-timeout: -1
+  jpa:
+    open-in-view: false
+    # data.sql을 Hibernate DDL 이후에 실행 (없으면 테이블이 없다고 실패한다)
+    defer-datasource-initialization: true
+    hibernate:
+      # 스키마는 이 앱(쓰기 권한 보유)의 엔티티가 소유한다.
+      # create: 기동할 때마다 DROP 후 재생성 → 학습 중 매번 깨끗한 상태에서 시작 (데이터도 사라진다)
+      ddl-auto: ${JPA_DDL_AUTO:create}
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  sql:
+    init:
+      # 임베디드 DB가 아니어도 data.sql(초기 계좌)을 매 기동마다 실행
+      mode: always
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     consumer:

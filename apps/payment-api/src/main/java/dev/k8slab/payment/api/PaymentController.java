@@ -5,9 +5,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.http.ResponseEntity;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -15,6 +13,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import dev.k8slab.payment.account.Account;
+import dev.k8slab.payment.account.AccountRepository;
 import dev.k8slab.payment.domain.Payment;
 import dev.k8slab.payment.domain.PaymentStore;
 import jakarta.validation.Valid;
@@ -28,14 +28,14 @@ public class PaymentController {
 
     private final PaymentService paymentService;
     private final PaymentStore store;
-    private final JdbcTemplate jdbcTemplate;
+    private final AccountRepository accounts;
     private final String podName;
 
-    public PaymentController(PaymentService paymentService, PaymentStore store, JdbcTemplate jdbcTemplate,
+    public PaymentController(PaymentService paymentService, PaymentStore store, AccountRepository accounts,
             @Value("${app.pod-name}") String podName) {
         this.paymentService = paymentService;
         this.store = store;
-        this.jdbcTemplate = jdbcTemplate;
+        this.accounts = accounts;
         this.podName = podName;
     }
 
@@ -64,14 +64,11 @@ public class PaymentController {
     /** 잔고는 실제 원장(MySQL)에서 read-only 계정으로 조회한다 */
     @GetMapping("/balances/{userId}")
     public ResponseEntity<Map<String, Object>> balance(@PathVariable String userId) {
-        try {
-            Long balance = jdbcTemplate.queryForObject(
-                    "SELECT balance FROM accounts WHERE user_id = ?", Long.class, userId);
-            return ResponseEntity.ok().header(SERVED_BY, podName)
-                    .body(Map.of("userId", userId, "balance", balance));
-        } catch (EmptyResultDataAccessException e) {
-            return ResponseEntity.notFound().header(SERVED_BY, podName).build();
-        }
+        return accounts.findByUserId(userId)
+                .map(Account::getBalance)
+                .map(balance -> ResponseEntity.ok().header(SERVED_BY, podName)
+                        .body(Map.<String, Object>of("userId", userId, "balance", balance)))
+                .orElseGet(() -> ResponseEntity.notFound().header(SERVED_BY, podName).build());
     }
 
     @GetMapping("/whoami")

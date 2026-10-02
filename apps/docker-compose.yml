@@ -1,7 +1,8 @@
 # K8s에 올리기 전 로컬 smoke test 용도.
 #   cd apps && docker compose up --build
 #   http://localhost:8088
-# MySQL 스키마와 토픽 스크립트는 K8s 매니페스트와 같은 파일을 쓴다(Single Source of Truth).
+# MySQL 계정 스크립트와 토픽 스크립트는 K8s 매니페스트와 같은 파일을 쓴다(Single Source of Truth).
+# 테이블 스키마는 balance-worker(JPA)가 기동할 때마다 재생성한다.
 name: k8s-lab
 
 services:

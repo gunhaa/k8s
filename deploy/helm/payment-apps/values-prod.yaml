@@ -36,6 +36,8 @@ paymentApi:
 
 balanceWorker:
   replicas: 3
+  # replica 3개가 각자 기동 시 DROP하면 서로의 데이터를 지우고 DDL이 경합한다 → prod는 update
+  ddlAuto: update
   resources:
     requests: { cpu: 250m, memory: 512Mi }
     limits: { memory: 768Mi }
