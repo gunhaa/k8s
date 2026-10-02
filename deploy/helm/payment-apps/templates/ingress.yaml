@@ -1,0 +1,30 @@
+{{- if .Values.ingress.enabled }}
+# 경로 기반 라우팅: 같은 호스트에서 /api 는 payment-api, 나머지는 frontend
+# 더 긴(구체적인) 경로가 먼저 매칭된다
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: payment
+  labels:
+    {{- include "payment-apps.labels" (dict "root" . "name" "payment-ingress") | nindent 4 }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  rules:
+    - host: {{ .Values.ingress.host }}
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: payment-api
+                port:
+                  name: http
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  name: http
+{{- end }}

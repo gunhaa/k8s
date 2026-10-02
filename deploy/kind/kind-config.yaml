@@ -1,0 +1,22 @@
+# kind 멀티노드 클러스터: control-plane 1 + worker 2
+# 각 '노드'는 Docker 컨테이너이고, 그 안에서 kubelet + containerd가 동작한다 (kubeadm으로 부트스트랩).
+#   kind create cluster --config deploy/kind/kind-config.yaml
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: k8s-lab
+nodes:
+  - role: control-plane
+    # 호스트(Windows/WSL)의 80/443 → 노드 컨테이너의 30080/30443(Traefik NodePort)
+    extraPortMappings:
+      - containerPort: 30080
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 30443
+        hostPort: 443
+        protocol: TCP
+  - role: worker
+    labels:
+      tier: app
+  - role: worker
+    labels:
+      tier: data   # mysql, kafka가 nodeAffinity로 여기에만 배치된다

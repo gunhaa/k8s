@@ -1,0 +1,62 @@
+# 1) 기본 차단: 이 네임스페이스의 모든 Pod로 들어오는 트래픽을 막는다 (화이트리스트 방식)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+# 2) 같은 네임스페이스 안의 통신은 허용 (topic-init Job → kafka, reconcile CronJob → mysql)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-same-namespace
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+# 3) MySQL: 앱 네임스페이스(라벨 k8slab.dev/role=app)의 payment-api, balance-worker Pod만 허용
+#    namespaceSelector와 podSelector가 같은 항목(-) 안에 있으므로 AND 조건이다
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-mysql-from-apps
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mysql
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              k8slab.dev/role: app
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: ["payment-api", "balance-worker"]
+      ports:
+        - port: 3306
+---
+# 4) Kafka: 앱 네임스페이스의 모든 Pod 허용
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-kafka-from-apps
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: kafka
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              k8slab.dev/role: app
+      ports:
+        - port: 9092

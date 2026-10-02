@@ -1,0 +1,94 @@
+{{- if .Values.frontend.enabled }}
+{{- $name := "frontend" }}
+{{- $ctx := dict "root" . "name" $name }}
+# ConfigMap: 이미지 안의 기본 설정 파일을 덮어쓴다 (이미지를 다시 빌드하지 않고 환경별 설정 변경)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+data:
+  config.js: |
+    window.APP_CONFIG = {
+      env: {{ .Values.global.env | quote }},
+      pollIntervalMs: {{ .Values.frontend.pollIntervalMs }}
+    };
+  # K8s에서는 Ingress가 /api 를 payment-api로 보내므로 nginx 프록시가 필요 없다
+  default.conf: |
+    server {
+        listen 8080;
+        server_name _;
+        root /usr/share/nginx/html;
+        location = /healthz { access_log off; default_type text/plain; return 200 "ok\n"; }
+        location / { try_files $uri $uri/ /index.html; }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ .Values.frontend.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "payment-apps.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "payment-apps.labels" $ctx | nindent 8 }}
+      annotations:
+        # ConfigMap 내용이 바뀌면 해시가 바뀌어 Pod가 롤링 재시작된다 (Helm 패턴)
+        checksum/config: {{ dict "env" .Values.global.env "poll" .Values.frontend.pollIntervalMs | toJson | sha256sum | trunc 16 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      containers:
+        - name: nginx
+          image: {{ include "payment-apps.image" (dict "root" . "image" .Values.frontend.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /healthz, port: http }
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.frontend.resources | nindent 12 }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            # subPath: 디렉터리 전체가 아니라 파일 하나만 덮어쓴다
+            - name: config
+              mountPath: /usr/share/nginx/html/config.js
+              subPath: config.js
+            - name: config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+      volumes:
+        - name: config
+          configMap:
+            name: frontend-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "payment-apps.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}

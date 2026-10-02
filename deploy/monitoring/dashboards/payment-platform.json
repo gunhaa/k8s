@@ -1,0 +1,103 @@
+{
+  "uid": "payment-platform",
+  "title": "K8s Lab - Payment Platform",
+  "schemaVersion": 39,
+  "tags": ["k8s-lab"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-30m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "refresh": 2,
+        "definition": "label_values(payments_requested_total, namespace)",
+        "query": { "query": "label_values(payments_requested_total, namespace)", "refId": "ns" },
+        "includeAll": true,
+        "multi": false,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "stat", "title": "결제 요청 (5분)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "targets": [ { "refId": "A", "expr": "sum(increase(payments_requested_total{namespace=~\"$namespace\"}[5m]))" } ]
+    },
+    {
+      "id": 2, "type": "stat", "title": "처리 완료 (5분)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "targets": [ { "refId": "A", "expr": "sum(increase(payments_processed_total{namespace=~\"$namespace\",status=\"COMPLETED\"}[5m]))" } ]
+    },
+    {
+      "id": 3, "type": "stat", "title": "거절 (5분)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "targets": [ { "refId": "A", "expr": "sum(increase(payments_processed_total{namespace=~\"$namespace\",status=\"REJECTED\"}[5m]))" } ]
+    },
+    {
+      "id": 4, "type": "stat", "title": "payment-api Pod 수",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "targets": [ { "refId": "A", "expr": "count(up{namespace=~\"$namespace\",service=\"payment-api\"} == 1)" } ]
+    },
+    {
+      "id": 5, "type": "timeseries", "title": "결제 요청 / 처리 rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum by (type) (rate(payments_requested_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "requested {{type}}" },
+        { "refId": "B", "expr": "sum by (status) (rate(payments_processed_total{namespace=~\"$namespace\"}[1m]))", "legendFormat": "processed {{status}}" }
+      ]
+    },
+    {
+      "id": 6, "type": "timeseries", "title": "Consumer lag (balance-worker)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "refId": "A", "expr": "max by (pod) (kafka_consumer_fetch_manager_records_lag_max{namespace=~\"$namespace\",service=\"balance-worker\"})", "legendFormat": "{{pod}}" }
+      ]
+    },
+    {
+      "id": 7, "type": "timeseries", "title": "HTTP 요청 rate by Pod (payment-api)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum by (pod) (rate(http_server_requests_seconds_count{namespace=~\"$namespace\",service=\"payment-api\",uri!~\"/actuator.*\"}[1m]))", "legendFormat": "{{pod}}" }
+      ]
+    },
+    {
+      "id": 8, "type": "timeseries", "title": "HTTP p95 latency (payment-api)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "histogram_quantile(0.95, sum by (le, uri) (rate(http_server_requests_seconds_bucket{namespace=~\"$namespace\",service=\"payment-api\",uri!~\"/actuator.*\"}[5m])))", "legendFormat": "{{uri}}" }
+      ]
+    },
+    {
+      "id": 9, "type": "timeseries", "title": "Pod CPU 사용량 (cores)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "refId": "A", "expr": "sum by (pod) (rate(container_cpu_usage_seconds_total{namespace=~\"$namespace\",container!=\"\",container!=\"POD\"}[1m]))", "legendFormat": "{{pod}}" }
+      ]
+    },
+    {
+      "id": 10, "type": "timeseries", "title": "JVM Heap 사용량",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "fieldConfig": { "defaults": { "unit": "bytes" }, "overrides": [] },
+      "targets": [
+        { "refId": "A", "expr": "sum by (pod) (jvm_memory_used_bytes{namespace=~\"$namespace\",area=\"heap\"})", "legendFormat": "{{pod}}" }
+      ]
+    }
+  ]
+}

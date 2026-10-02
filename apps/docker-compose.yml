@@ -1,0 +1,81 @@
+# K8s에 올리기 전 로컬 smoke test 용도.
+#   cd apps && docker compose up --build
+#   http://localhost:8088
+# MySQL 스키마와 토픽 스크립트는 K8s 매니페스트와 같은 파일을 쓴다(Single Source of Truth).
+name: k8s-lab
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root-pass
+      MYSQL_DATABASE: payments
+      MYSQL_USER: worker
+      MYSQL_PASSWORD: worker-pass
+      API_RO_PASSWORD: api-ro-pass
+    volumes:
+      - ../deploy/kustomize/data/base/mysql/initdb:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 5s
+      retries: 20
+
+  kafka:
+    image: apache/kafka:4.3.1
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+
+  kafka-topic-init:
+    image: apache/kafka:4.3.1
+    depends_on: [kafka]
+    entrypoint: ["bash", "/scripts/create-topics.sh"]
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+    volumes:
+      - ../deploy/kustomize/data/base/kafka/create-topics.sh:/scripts/create-topics.sh:ro
+    restart: "no"
+
+  payment-api:
+    build: ./payment-api
+    image: k8s-lab/payment-api:dev
+    depends_on:
+      mysql: { condition: service_healthy }
+      kafka-topic-init: { condition: service_completed_successfully }
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DB_HOST: mysql
+      DB_USER: api_ro
+      DB_PASSWORD: api-ro-pass
+      POD_NAME: payment-api-compose
+
+  balance-worker:
+    build: ./balance-worker
+    image: k8s-lab/balance-worker:dev
+    depends_on:
+      mysql: { condition: service_healthy }
+      kafka-topic-init: { condition: service_completed_successfully }
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      DB_HOST: mysql
+      DB_USER: worker
+      DB_PASSWORD: worker-pass
+
+  frontend:
+    build: ./frontend
+    image: k8s-lab/frontend:dev
+    depends_on: [payment-api]
+    ports:
+      - "8088:8080"

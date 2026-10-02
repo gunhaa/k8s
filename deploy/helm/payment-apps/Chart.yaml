@@ -1,0 +1,6 @@
+apiVersion: v2
+name: payment-apps
+description: K8s Lab 결제 플랫폼 애플리케이션 (frontend, payment-api, balance-worker)
+type: application
+version: 0.1.0        # 차트 자체의 버전
+appVersion: "0.1.0"   # 차트가 배포하는 애플리케이션 버전

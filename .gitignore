@@ -1,0 +1,13 @@
+# build
+apps/*/build/
+apps/*/.gradle/
+*.iml
+.idea/
+.vscode/
+
+# secrets (prod overlay)
+deploy/kustomize/data/overlays/prod/secrets.env
+
+# helm
+deploy/helm/*/charts/
+*.tgz

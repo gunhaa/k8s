@@ -1,0 +1,23 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# 모든 리소스의 metadata.namespace를 data-dev로 맞춘다
+namespace: data-dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+labels:
+  - pairs:
+      k8slab.dev/env: dev
+    includeSelectors: false
+
+# 학습용 dev 비밀번호. 실무에서는 Git에 평문 Secret을 두지 않는다
+# (Sealed Secrets / External Secrets Operator 등 → docs/05-tooling.md 참고)
+secretGenerator:
+  - name: mysql-credentials
+    literals:
+      - root-password=root-pass
+      - worker-password=worker-pass
+      - api-ro-password=api-ro-pass

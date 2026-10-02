@@ -1,0 +1,100 @@
+{{- if .Values.balanceWorker.enabled }}
+{{- $name := "balance-worker" }}
+{{- $ctx := dict "root" . "name" $name }}
+{{- $v := .Values.balanceWorker }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+spec:
+  replicas: {{ $v.replicas }}
+  revisionHistoryLimit: 5
+  selector:
+    matchLabels:
+      {{- include "payment-apps.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "payment-apps.labels" $ctx | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      # 처리 중인 메시지를 마무리하고 consumer group에서 정상 탈퇴할 시간
+      terminationGracePeriodSeconds: 40
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "payment-apps.selectorLabels" $ctx | nindent 14 }}
+      initContainers:
+        {{- include "payment-apps.waitFor" (dict "root" . "label" "kafka" "host" (.Values.kafka.bootstrapServers | splitList ":" | first) "port" (.Values.kafka.bootstrapServers | splitList ":" | last)) | nindent 8 }}
+        {{- include "payment-apps.waitFor" (dict "root" . "label" "mysql" "host" .Values.mysql.host "port" .Values.mysql.port) | nindent 8 }}
+      containers:
+        - name: app
+          image: {{ include "payment-apps.image" (dict "root" . "image" $v.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ .Values.kafka.bootstrapServers | quote }}
+            - name: DB_HOST
+              value: {{ .Values.mysql.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.mysql.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.mysql.database | quote }}
+            - name: DB_USER
+              value: worker
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: payment-db-credentials
+                  key: worker-password
+          {{- include "payment-apps.springProbes" . | nindent 10 }}
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          {{- include "payment-apps.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+# worker는 외부 요청을 받지 않지만, Prometheus가 /actuator/prometheus 를 수집할 수 있게 Service를 둔다
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+    k8slab.dev/metrics: "true"
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "payment-apps.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- if $v.pdb.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+spec:
+  maxUnavailable: {{ $v.pdb.maxUnavailable }}
+  selector:
+    matchLabels:
+      {{- include "payment-apps.selectorLabels" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}

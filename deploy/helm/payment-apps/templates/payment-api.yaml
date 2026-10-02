@@ -1,0 +1,145 @@
+{{- if .Values.paymentApi.enabled }}
+{{- $name := "payment-api" }}
+{{- $ctx := dict "root" . "name" $name }}
+{{- $v := .Values.paymentApi }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+spec:
+  {{- if not $v.hpa.enabled }}
+  # HPA를 쓰면 replicas는 HPA가 관리하므로 여기서 지정하지 않는다 (지정하면 sync할 때마다 되돌아간다)
+  replicas: {{ $v.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0     # 새 Pod가 Ready가 된 뒤에 기존 Pod를 내린다 → 무중단
+  selector:
+    matchLabels:
+      {{- include "payment-apps.selectorLabels" $ctx | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "payment-apps.labels" $ctx | nindent 8 }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 40
+      # 노드마다 고르게 분산 (한 노드가 죽어도 서비스 유지)
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              {{- include "payment-apps.selectorLabels" $ctx | nindent 14 }}
+      initContainers:
+        {{- include "payment-apps.waitFor" (dict "root" . "label" "kafka" "host" (.Values.kafka.bootstrapServers | splitList ":" | first) "port" (.Values.kafka.bootstrapServers | splitList ":" | last)) | nindent 8 }}
+      containers:
+        - name: app
+          image: {{ include "payment-apps.image" (dict "root" . "image" $v.image) }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+          env:
+            # Downward API: Pod 이름 → Kafka consumer group id, X-Served-By 응답 헤더
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ .Values.kafka.bootstrapServers | quote }}
+            - name: DB_HOST
+              value: {{ .Values.mysql.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.mysql.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.mysql.database | quote }}
+            - name: DB_USER
+              value: api_ro
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: payment-db-credentials
+                  key: api-ro-password
+          {{- include "payment-apps.springProbes" . | nindent 10 }}
+          lifecycle:
+            # 종료 신호 전에 잠시 대기 → 그동안 Endpoint에서 빠져 새 요청이 들어오지 않게 한다
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          resources:
+            {{- toYaml $v.resources | nindent 12 }}
+          {{- include "payment-apps.containerSecurity" . | nindent 10 }}
+          volumeMounts:
+            # readOnlyRootFilesystem 이므로 Tomcat 임시 파일용 쓰기 가능 공간을 따로 준다
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+    k8slab.dev/metrics: "true"
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "payment-apps.selectorLabels" $ctx | nindent 4 }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- if $v.hpa.enabled }}
+---
+# HPA: metrics-server가 수집한 CPU 사용률(requests 대비)을 보고 replicas를 조절한다
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ $name }}
+  minReplicas: {{ $v.hpa.minReplicas }}
+  maxReplicas: {{ $v.hpa.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ $v.hpa.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 60   # 학습용으로 짧게 (기본 300초)
+{{- end }}
+{{- if $v.pdb.enabled }}
+---
+# PDB: 노드 drain 같은 '자발적 중단' 때 최소 가용 Pod 수를 보장한다
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "payment-apps.labels" $ctx | nindent 4 }}
+spec:
+  minAvailable: {{ $v.pdb.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "payment-apps.selectorLabels" $ctx | nindent 6 }}
+{{- end }}
+{{- end }}

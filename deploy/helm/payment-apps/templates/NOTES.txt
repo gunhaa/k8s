@@ -1,0 +1,6 @@
+payment-apps ({{ .Values.global.env }}) 배포 완료. image tag: {{ .Values.global.imageTag }}
+
+  접속:        http://{{ .Values.ingress.host }}
+  Pod 확인:    kubectl get pods -n {{ .Release.Namespace }} -o wide
+  HPA 확인:    kubectl get hpa -n {{ .Release.Namespace }} -w
+  로그:        kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name=balance-worker -f

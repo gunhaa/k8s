@@ -1,0 +1,41 @@
+global:
+  env: prod
+  imageTag: "0.1.0"     # prod는 움직이지 않는 릴리스 태그로 고정
+
+ingress:
+  host: prod.payment.localtest.me
+
+kafka:
+  bootstrapServers: kafka.data-prod.svc.cluster.local:9092
+
+mysql:
+  host: mysql.data-prod.svc.cluster.local
+
+# prod 비밀번호는 values 파일에 두지 않고 배포 시 --set 또는 외부 Secret으로 주입
+secrets:
+  apiReadonlyPassword: ""
+  workerPassword: ""
+
+serviceMonitor:
+  enabled: true
+
+frontend:
+  replicas: 2
+
+paymentApi:
+  replicas: 3
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 768Mi }
+  hpa:
+    minReplicas: 3
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 50
+  pdb:
+    minAvailable: 2
+
+balanceWorker:
+  replicas: 3
+  resources:
+    requests: { cpu: 250m, memory: 512Mi }
+    limits: { memory: 768Mi }

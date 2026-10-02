@@ -1,0 +1,30 @@
+# 최초 1회만 kubectl로 적용하는 '뿌리' Application. 이후 모든 변경은 Git push로 반영된다.
+# 직접 적용하지 말고 scripts/50-gitops.sh 를 쓰면 REPO_URL이 자동으로 치환된다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: REPO_URL
+    targetRevision: TARGET_REVISION
+    path: deploy/argocd
+    helm:
+      parameters:
+        - name: repoURL
+          value: REPO_URL
+        - name: targetRevision
+          value: TARGET_REVISION
+        - name: monitoring.enabled
+          value: "MONITORING_ENABLED"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

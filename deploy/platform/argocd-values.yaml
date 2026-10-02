@@ -1,0 +1,19 @@
+# Argo CD (GitOps)
+# helm upgrade --install argocd argo/argo-cd -n argocd --create-namespace -f deploy/platform/argocd-values.yaml
+# 초기 admin 비밀번호:
+#   kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+configs:
+  params:
+    # TLS는 Ingress 앞단에서 처리하는 것으로 가정하고 argocd-server는 HTTP로 동작
+    server.insecure: true
+
+server:
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hostname: argocd.localtest.me
+
+dex:
+  enabled: false
+notifications:
+  enabled: false

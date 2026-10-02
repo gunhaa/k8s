@@ -1,0 +1,43 @@
+# Traefik Ingress Controller (k3s의 기본 Ingress Controller와 동일)
+# helm upgrade --install traefik traefik/traefik -n traefik --create-namespace -f deploy/platform/traefik-values.yaml
+ingressClass:
+  enabled: true
+  isDefaultClass: true
+  name: traefik
+
+providers:
+  kubernetesIngress:
+    enabled: true
+  # Gateway API(HTTPRoute)도 실습해 보고 싶으면 true로 바꾼다 (docs/03-components.md 참고)
+  kubernetesGateway:
+    enabled: false
+
+service:
+  # kind에는 클라우드 LoadBalancer가 없으므로 NodePort + kind extraPortMappings로 노출
+  type: NodePort
+
+ports:
+  web:
+    nodePort: 30080
+  websecure:
+    nodePort: 30443
+
+# control-plane 노드에 띄워야 extraPortMappings 경로가 가장 짧다 (NodePort는 어느 노드로 들어와도 동작하긴 한다)
+nodeSelector:
+  node-role.kubernetes.io/control-plane: ""
+tolerations:
+  - key: node-role.kubernetes.io/control-plane
+    operator: Exists
+    effect: NoSchedule
+
+metrics:
+  prometheus:
+    serviceMonitor:
+      enabled: false
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    memory: 256Mi

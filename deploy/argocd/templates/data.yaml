@@ -1,0 +1,27 @@
+# 데이터 계층(Kustomize overlay)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: data-{{ .Values.env }}
+  namespace: argocd
+  annotations:
+    # 숫자가 작은 wave부터 동기화한다: data(0) → apps(1) → monitoring(2)
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers:
+    # Application을 지우면 배포했던 리소스도 같이 지운다
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: deploy/kustomize/data/overlays/{{ .Values.env }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: data-{{ .Values.env }}
+  syncPolicy:
+    automated:
+      prune: true      # Git에서 지운 리소스는 클러스터에서도 지운다
+      selfHeal: true   # 누가 kubectl로 직접 바꾸면 Git 상태로 되돌린다
+    syncOptions:
+      - CreateNamespace=false   # Namespace는 overlay 안에 정의되어 있다

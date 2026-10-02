@@ -1,0 +1,15 @@
+# 컨테이너가 requests/limits를 안 적으면 이 기본값이 들어간다.
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: default-limits
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 50m
+        memory: 128Mi
+      default:
+        memory: 512Mi
+      max:
+        memory: 2Gi

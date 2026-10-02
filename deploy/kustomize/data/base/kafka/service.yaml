@@ -1,0 +1,34 @@
+# 1) Headless: 브로커 개별 주소(kafka-0.kafka-headless)용. 클라이언트는 메타데이터 응답으로 이 주소를 받아 접속한다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+  labels:
+    app.kubernetes.io/name: kafka
+spec:
+  clusterIP: None
+  # Ready가 되기 전에도 DNS를 등록 → 브로커 간 통신/부트스트랩 시 닭과 달걀 문제를 피한다
+  publishNotReadyAddresses: true
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: client
+      port: 9092
+    - name: controller
+      port: 9093
+---
+# 2) ClusterIP: 클라이언트의 bootstrap 주소(kafka.<ns>.svc:9092)
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka
+  labels:
+    app.kubernetes.io/name: kafka
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: kafka
+  ports:
+    - name: client
+      port: 9092
+      targetPort: client

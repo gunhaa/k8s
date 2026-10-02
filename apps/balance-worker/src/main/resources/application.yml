@@ -1,0 +1,53 @@
+server:
+  port: 8080
+  shutdown: graceful
+
+spring:
+  application:
+    name: balance-worker
+  lifecycle:
+    timeout-per-shutdown-phase: 20s
+  datasource:
+    # 쓰기 권한이 있는 worker 계정
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/${DB_NAME:payments}
+    username: ${DB_USER:worker}
+    password: ${DB_PASSWORD:worker-pass}
+    hikari:
+      maximum-pool-size: 5
+      initialization-fail-timeout: -1
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    consumer:
+      group-id: balance-worker
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      properties:
+        # 처리 중 rebalance로 끊기지 않도록 여유를 둔다
+        max.poll.interval.ms: 60000
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      acks: all
+    listener:
+      # 레코드 하나를 처리(DB 커밋 + 결과 발행)할 때마다 offset을 커밋한다
+      ack-mode: record
+
+app:
+  topics:
+    requested: payment.requested
+    result: payment.result
+    dead-letter: payment.requested.dlt
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}

@@ -1,0 +1,49 @@
+# Prometheus Operator + Prometheus + Grafana + node-exporter(DaemonSet) + kube-state-metrics
+# helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n monitoring --create-namespace -f ...
+
+# kind에서는 control-plane 컴포넌트가 localhost에만 바인딩되어 있어 수집이 실패하므로 끈다
+kubeEtcd:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+
+alertmanager:
+  enabled: false   # 로컬 리소스 절약
+
+prometheus:
+  prometheusSpec:
+    retention: 1d
+    # false: Helm 릴리스 라벨이 없는 ServiceMonitor도 모든 네임스페이스에서 수집한다
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 100m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+grafana:
+  adminPassword: admin
+  ingress:
+    enabled: true
+    ingressClassName: traefik
+    hosts:
+      - grafana.localtest.me
+  sidecar:
+    dashboards:
+      enabled: true
+      # grafana_dashboard=1 라벨이 붙은 ConfigMap을 모든 네임스페이스에서 찾아 대시보드로 자동 등록
+      label: grafana_dashboard
+      labelValue: "1"
+      searchNamespace: ALL
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi

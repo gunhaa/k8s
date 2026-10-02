@@ -1,0 +1,46 @@
+# prod overlay: base는 그대로 두고 '차이점'만 patch로 덮는다.
+# 비교: kubectl kustomize deploy/kustomize/data/overlays/dev > /tmp/dev.yaml
+#       kubectl kustomize deploy/kustomize/data/overlays/prod > /tmp/prod.yaml
+#       diff /tmp/dev.yaml /tmp/prod.yaml
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: data-prod
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+labels:
+  - pairs:
+      k8slab.dev/env: prod
+    includeSelectors: false
+
+# 이미지 태그를 고정 (dev는 base의 태그를 그대로 사용)
+images:
+  - name: mysql
+    newTag: "8.4"
+  - name: apache/kafka
+    newTag: 4.3.1
+
+patches:
+  # 1) Strategic Merge Patch: 리소스와 스토리지 크기 확대
+  - path: patch-mysql.yaml
+  - path: patch-kafka.yaml
+  - path: patch-quota.yaml
+  # 2) JSON 6902 Patch: 특정 필드만 정확히 교체
+  - target:
+      kind: CronJob
+      name: balance-reconcile
+    patch: |-
+      - op: replace
+        path: /spec/schedule
+        value: "*/1 * * * *"
+
+# prod 비밀번호는 Git에 두지 않고, 배포 직전에 로컬 파일로 만든다:
+#   printf 'root-password=...\nworker-password=...\napi-ro-password=...\n' > secrets.env
+# (secrets.env는 .gitignore 대상)
+secretGenerator:
+  - name: mysql-credentials
+    envs:
+      - secrets.env

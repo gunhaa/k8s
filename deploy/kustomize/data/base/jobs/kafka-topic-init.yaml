@@ -1,0 +1,45 @@
+# 일회성 작업(Job): 토픽 생성.
+# - kubectl apply -k: 처음 apply할 때 한 번 실행된다
+# - ArgoCD: PostSync 훅 → 모든 리소스가 Healthy가 된 뒤 매 Sync마다 다시 실행된다(스크립트가 멱등)
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kafka-topic-init
+  labels:
+    app.kubernetes.io/name: kafka-topic-init
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 6
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kafka-topic-init
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: data-workload
+      automountServiceAccountToken: false
+      containers:
+        - name: create-topics
+          image: apache/kafka:4.3.1
+          command: ["bash", "/scripts/create-topics.sh"]
+          env:
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: kafka:9092
+            - name: PARTITIONS
+              value: "3"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: kafka-scripts

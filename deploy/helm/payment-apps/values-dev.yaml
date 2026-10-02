@@ -1,0 +1,18 @@
+global:
+  env: dev
+  imageTag: dev
+
+ingress:
+  host: payment.localtest.me
+
+kafka:
+  bootstrapServers: kafka.data-dev.svc.cluster.local:9092
+
+mysql:
+  host: mysql.data-dev.svc.cluster.local
+
+serviceMonitor:
+  enabled: true
+
+paymentApi:
+  replicas: 2

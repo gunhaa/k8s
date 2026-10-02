@@ -1,0 +1,4 @@
+# Windows에서 편집해도 셸 스크립트/YAML은 LF로 유지 (WSL에서 CRLF면 "bad interpreter" 오류)
+* text=auto eol=lf
+*.png binary
+*.jpg binary

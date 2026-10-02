@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>K8s Lab · Payment</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>K8s Lab Payment</h1>
+    <span id="env" class="badge">env: ?</span>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>결제 요청</h2>
+      <form id="payment-form">
+        <label>사용자
+          <select name="userId">
+            <option>user-1</option>
+            <option>user-2</option>
+            <option>user-3</option>
+            <option>user-404</option>
+          </select>
+        </label>
+        <label>유형
+          <select name="type">
+            <option value="PAYMENT">PAYMENT (−)</option>
+            <option value="CHARGE">CHARGE (+)</option>
+          </select>
+        </label>
+        <label>금액
+          <input name="amount" type="number" min="1" value="1000" required>
+        </label>
+        <button type="submit">요청</button>
+        <button type="button" id="burst">10건 연속 요청</button>
+      </form>
+      <p class="hint">user-404는 계좌가 없어 REJECTED 됩니다. 잔고보다 큰 PAYMENT도 REJECTED 됩니다.</p>
+    </section>
+
+    <section class="card">
+      <h2>잔고 <small>(MySQL 원장)</small></h2>
+      <div id="balances" class="balances"></div>
+    </section>
+
+    <section class="card wide">
+      <h2>결제 상태 <small>(payment-api 인메모리)</small></h2>
+      <table>
+        <thead>
+          <tr><th>ID</th><th>사용자</th><th>유형</th><th>금액</th><th>상태</th><th>처리 후 잔고</th><th>응답 Pod</th></tr>
+        </thead>
+        <tbody id="payments"></tbody>
+      </table>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

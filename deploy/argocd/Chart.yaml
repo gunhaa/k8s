@@ -1,0 +1,7 @@
+# App of Apps 패턴: 이 차트가 렌더링하는 것은 워크로드가 아니라 ArgoCD Application 리소스들이다.
+# root-app.yaml(이 차트를 가리키는 Application)을 한 번만 kubectl apply 하면 나머지는 ArgoCD가 만든다.
+apiVersion: v2
+name: k8s-lab-apps
+description: ArgoCD App of Apps for K8s Lab
+type: application
+version: 0.1.0

@@ -1,0 +1,18 @@
+{{- if .Values.serviceMonitor.enabled }}
+# ServiceMonitor는 Prometheus Operator가 제공하는 CRD(Custom Resource)다.
+# k8slab.dev/metrics=true 라벨이 붙은 Service의 http 포트에서 /actuator/prometheus 를 수집한다.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: payment-apps
+  labels:
+    {{- include "payment-apps.labels" (dict "root" . "name" "payment-apps-monitor") | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      k8slab.dev/metrics: "true"
+  endpoints:
+    - port: http
+      path: /actuator/prometheus
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

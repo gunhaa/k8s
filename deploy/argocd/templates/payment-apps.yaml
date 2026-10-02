@@ -1,0 +1,43 @@
+# 애플리케이션(직접 만든 Helm 차트)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: payment-apps-{{ .Values.env }}
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: {{ .Values.repoURL }}
+    targetRevision: {{ .Values.targetRevision }}
+    path: deploy/helm/payment-apps
+    helm:
+      releaseName: payment-apps
+      valueFiles:
+        - values-{{ .Values.env }}.yaml
+      parameters:
+        - name: serviceMonitor.enabled
+          value: {{ .Values.monitoring.enabled | quote }}
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: payment-{{ .Values.env }}
+  # HPA가 바꾸는 replicas는 Git과 달라도 OutOfSync로 보지 않는다
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - RespectIgnoreDifferences=true
+    # ArgoCD가 만드는 Namespace에 라벨을 붙인다 → data 네임스페이스 NetworkPolicy가 이 라벨로 허용한다
+    managedNamespaceMetadata:
+      labels:
+        k8slab.dev/role: app

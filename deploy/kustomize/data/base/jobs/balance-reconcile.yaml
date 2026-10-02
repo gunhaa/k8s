@@ -1,0 +1,60 @@
+# 주기 작업(CronJob): 5분마다 잔고와 원장의 정합성을 점검한다. 불일치가 있으면 Job이 실패(exit 1)한다.
+# 수동 실행: kubectl create job -n data-dev --from=cronjob/balance-reconcile reconcile-manual
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: balance-reconcile
+  labels:
+    app.kubernetes.io/name: balance-reconcile
+spec:
+  schedule: "*/5 * * * *"
+  timeZone: Asia/Seoul
+  concurrencyPolicy: Forbid       # 이전 실행이 안 끝났으면 건너뛴다
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: balance-reconcile
+        spec:
+          restartPolicy: Never
+          serviceAccountName: data-workload
+          automountServiceAccountToken: false
+          containers:
+            - name: reconcile
+              image: mysql:8.4
+              command:
+                - bash
+                - -c
+                - |
+                  set -euo pipefail
+                  result=$(mysql -h mysql -u worker -p"$MYSQL_PASSWORD" payments --batch --skip-column-names < /sql/reconcile.sql)
+                  if [ -n "$result" ]; then
+                    echo "MISMATCH detected (user_id, balance, expected):"
+                    echo "$result"
+                    exit 1
+                  fi
+                  echo "OK: all balances match the ledger at $(date -Is)"
+              env:
+                - name: MYSQL_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: mysql-credentials
+                      key: worker-password
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+              volumeMounts:
+                - name: sql
+                  mountPath: /sql
+          volumes:
+            - name: sql
+              configMap:
+                name: reconcile-sql
