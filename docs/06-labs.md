@@ -32,9 +32,73 @@ k get pods -n kube-system -o wide       # static pod(apiserver, etcd…) + Daemo
 ---
 
 ## Lab 2. 배포하고 E2E 확인
+GitOps 이전 단계로, `kubectl`과 `helm`으로 **직접** 배포합니다. 저장소 루트에서 실행하세요.
+> Argo CD로 관리 중인 환경에서는 이 방식을 쓰지 마세요 (selfHeal이 수동 변경을 되돌립니다).
+
+### 2-1. 이미지 빌드 → kind 노드에 적재
+레지스트리 없이 `kind load`로 노드(컨테이너) 안의 containerd 이미지 저장소에 직접 복사합니다.
+그래서 `imagePullPolicy: IfNotPresent`이면 pull 없이 바로 쓸 수 있습니다.
 ```bash
-./scripts/30-build-load.sh
-./scripts/40-deploy-manual.sh
+TAG=$(git rev-parse --short HEAD); echo $TAG     # 이미지 태그 = git short sha
+
+docker build -t k8s-lab/frontend:$TAG apps/frontend
+kind load docker-image k8s-lab/frontend:$TAG --name k8s-lab
+
+docker build -t k8s-lab/payment-api:$TAG apps/payment-api
+kind load docker-image k8s-lab/payment-api:$TAG --name k8s-lab
+
+docker build -t k8s-lab/balance-worker:$TAG apps/balance-worker
+kind load docker-image k8s-lab/balance-worker:$TAG --name k8s-lab
+
+# 노드 안에 정말 들어갔는지 확인
+docker exec k8s-lab-worker crictl images | grep k8s-lab
+```
+
+### 2-2. 데이터 계층 (Kustomize): `data-dev`
+```bash
+kubectl kustomize deploy/kustomize/data/overlays/dev | less   # 무엇이 적용될지 먼저 읽기
+kubectl apply -k deploy/kustomize/data/overlays/dev
+
+# StatefulSet과 토픽 생성 Job이 준비될 때까지 대기
+kubectl rollout status statefulset/mysql -n $D --timeout=300s
+kubectl rollout status statefulset/kafka -n $D --timeout=300s
+kubectl wait --for=condition=complete job/kafka-topic-init -n $D --timeout=300s
+```
+
+### 2-3. 앱 네임스페이스 + 라벨
+NetworkPolicy가 이 라벨이 붙은 네임스페이스에서 오는 접근만 허용합니다.
+```bash
+kubectl create namespace $A --dry-run=client -o yaml | kubectl apply -f -   # 이미 있어도 에러 없음
+kubectl label namespace $A k8slab.dev/role=app --overwrite
+kubectl get ns $A --show-labels
+```
+
+### 2-4. 애플리케이션 (Helm): `payment-dev`
+```bash
+# 모니터링(01-environments §4.4)을 설치했으면 ServiceMonitor CRD가 있다 → MON=true, 없으면 false
+kubectl get crd servicemonitors.monitoring.coreos.com
+MON=true
+
+CHART=deploy/helm/payment-apps
+helm template payment-apps $CHART -f $CHART/values-dev.yaml --set global.imageTag=$TAG | less   # 렌더링 결과 먼저 보기
+
+helm upgrade --install payment-apps $CHART \
+  -n $A \
+  -f $CHART/values-dev.yaml \
+  --set global.imageTag=$TAG \
+  --set serviceMonitor.enabled=$MON \
+  --wait --timeout 10m
+
+helm list -n $A
+```
+
+### 2-5. Grafana 대시보드 (MON=true일 때만)
+```bash
+kubectl apply -k deploy/monitoring
+```
+
+### 2-6. 확인
+```bash
 k get pods -n $D -o wide     # kafka-0, mysql-0 은 worker2(tier=data)에만
 k get pods -n $A -o wide     # payment-api 2개가 두 노드에 분산
 ```
@@ -124,7 +188,8 @@ k describe pod -n $A $POD | grep -A5 'Last State'
 ## Lab 8. 롤링 업데이트와 롤백
 ```bash
 # 코드 수정 (예: PaymentController whoami 응답에 version 필드 추가) 후
-TAG=v2 ./scripts/30-build-load.sh payment-api
+docker build -t k8s-lab/payment-api:v2 apps/payment-api
+kind load docker-image k8s-lab/payment-api:v2 --name k8s-lab
 helm upgrade payment-apps deploy/helm/payment-apps -n $A -f deploy/helm/payment-apps/values-dev.yaml --reuse-values --set global.imageTag=v2
 k rollout status deploy/payment-api -n $A
 k get rs -n $A -l app.kubernetes.io/name=payment-api      # old RS는 0으로 남음
@@ -205,7 +270,7 @@ k get pods -n $A -l app.kubernetes.io/name=frontend -w   # checksum이 바뀌어
 
 ## Lab 14. GitOps 전환
 [05-tooling.md §4](05-tooling.md#4-argo-cd)를 따라 진행합니다.
-1. `./scripts/50-gitops.sh` → UI에서 root → 3개 Application 트리 확인
+1. [05-tooling.md §4 시작하기](05-tooling.md#시작하기)의 3) root 등록 → UI에서 root → 3개 Application 트리 확인
 2. `values-dev.yaml`에서 `balanceWorker.replicas: 2`로 바꿔 push → 자동 반영
 3. `k delete svc frontend -n $A` → selfHeal로 복구
 4. Git에서 `templates/serviceaccounts.yaml`의 하나를 지우고 push → prune 확인 후 되돌리기

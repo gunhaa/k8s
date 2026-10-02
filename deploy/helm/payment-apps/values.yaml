@@ -3,7 +3,7 @@
 
 global:
   env: dev
-  # 모든 앱 이미지의 기본 태그 (scripts/30-build-load.sh 가 git short sha로 빌드한다)
+  # 모든 앱 이미지의 기본 태그 (docs/06-labs.md Lab 2-1 에서 git short sha로 빌드한다)
   imageTag: dev
   imagePullPolicy: IfNotPresent   # kind load로 노드에 넣은 이미지를 쓰므로 Always 금지
   imageRegistry: ""                # 예: ghcr.io/<user>/ (끝에 / 포함)

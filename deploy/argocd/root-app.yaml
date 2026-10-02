@@ -1,5 +1,5 @@
 # 최초 1회만 kubectl로 적용하는 '뿌리' Application. 이후 모든 변경은 Git push로 반영된다.
-# 직접 적용하지 말고 scripts/50-gitops.sh 를 쓰면 REPO_URL이 자동으로 치환된다.
+# 그대로 적용하지 말고 sed로 REPO_URL 등을 치환한 뒤 적용한다 → docs/05-tooling.md §4 시작하기
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:

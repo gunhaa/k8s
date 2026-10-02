@@ -1,4 +1,4 @@
-# root-app.yaml 에서 helm.parameters 로 덮어쓴다 (scripts/50-gitops.sh 가 git remote URL을 넣어 준다)
+# root-app.yaml 에서 helm.parameters 로 덮어쓴다 (git remote URL을 sed로 넣는다 → docs/05-tooling.md §4)
 repoURL: https://github.com/CHANGE-ME/k8s-lab.git
 targetRevision: main
 

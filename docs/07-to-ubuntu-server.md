@@ -27,7 +27,7 @@ flowchart TB
 |---|---|---|---|
 | 설치 | `kind create cluster` | `curl -sfL https://get.k3s.io \| sh -` | containerd + kubeadm init/join + CNI |
 | CNI / NetworkPolicy | kindnet (지원) | flannel + 내장 network policy controller | Calico / Cilium 설치 |
-| Ingress Controller | Traefik(Helm 설치) | **Traefik 기본 내장** → `20-platform.sh`의 Traefik 단계 생략 | Traefik 또는 다른 컨트롤러 Helm 설치 |
+| Ingress Controller | Traefik(Helm 설치) | **Traefik 기본 내장** → 플랫폼 설치의 Traefik 단계 생략 | Traefik 또는 다른 컨트롤러 Helm 설치 |
 | Service 노출 | NodePort 30080 + extraPortMappings | 내장 ServiceLB(Klipper)가 `LoadBalancer` 처리 | **MetalLB** 설치 후 `LoadBalancer` |
 | StorageClass | `standard`(local-path) | `local-path` 기본 내장 | Longhorn / NFS provisioner / OpenEBS 설치 |
 | metrics-server | Helm 설치 (`--kubelet-insecure-tls`) | **기본 내장** | Helm 설치 (정식 인증서면 insecure 옵션 불필요) |
@@ -58,11 +58,12 @@ docker build -t ghcr.io/<you>/k8s-lab/payment-api:0.1.0 apps/payment-api && dock
 #    ingress.host: payment.<your-domain>
 #    ingress.className: traefik   (k3s 기본)
 
-# 5) 플랫폼: Traefik, metrics-server는 k3s에 이미 있으므로 생략
-TRAEFIK=false METRICS_SERVER=false ./scripts/20-platform.sh
+# 5) 플랫폼: 01-environments §4 를 따르되,
+#    Traefik(4.2)과 metrics-server(4.3)는 k3s에 이미 있으므로 생략하고 4.4, 4.5만 실행
 
 # 6) 배포 (수동 또는 GitOps): 동일
-./scripts/40-deploy-manual.sh    # 또는 ./scripts/50-gitops.sh
+#    수동: 06-labs Lab 2 의 2-2 ~ 2-5 (2-1의 kind load 대신 3)의 레지스트리 push)
+#    GitOps: 05-tooling §4 시작하기
 ```
 
 ## 운영 수준으로 가려면 (다음 학습 주제)

@@ -131,7 +131,7 @@ helm get values payment-apps -n payment-dev
 | hook (PreSync/Sync/PostSync) | 동기화 전후에 실행하는 리소스 (주로 Job) |
 
 ### 이 프로젝트의 구성
-- `deploy/argocd/root-app.yaml`: 최초 1회 `kubectl apply` (스크립트가 repo URL을 치환)
+- `deploy/argocd/root-app.yaml`: 최초 1회 `kubectl apply` (`sed`로 repo URL 등을 치환한 뒤 적용, 아래 "시작하기" 참고)
 - `deploy/argocd/templates/*.yaml`: root가 만드는 하위 Application 3개 (wave 0, 1, 2)
 - `payment-apps-dev`: `managedNamespaceMetadata`로 네임스페이스에 `k8slab.dev/role=app` 라벨 → NetworkPolicy 통과
 - `ignoreDifferences: /spec/replicas` → HPA와 충돌 방지
@@ -152,12 +152,39 @@ kubectl -n argocd create secret generic repo-k8s-lab \
   --from-literal=password=<PAT>
 kubectl -n argocd label secret repo-k8s-lab argocd.argoproj.io/secret-type=repository
 
-# 3) root 등록
-./scripts/50-gitops.sh
+```
 
-# 4) 상태 확인
+```bash
+# 3) Lab 2에서 helm으로 직접 설치한 릴리스가 있으면 먼저 제거 (Argo CD와 같은 리소스를 두고 충돌한다)
+helm list -n payment-dev
+helm uninstall payment-apps -n payment-dev
+```
+
+```bash
+# 4) root-app.yaml의 자리표시자(REPO_URL, TARGET_REVISION, MONITORING_ENABLED)에 넣을 값 준비
+REPO_URL=$(git remote get-url origin); echo $REPO_URL        # HTTPS URL 권장 (git@... SSH는 키 등록 필요)
+TARGET_REVISION=$(git rev-parse --abbrev-ref HEAD); echo $TARGET_REVISION   # 보통 main
+kubectl get crd servicemonitors.monitoring.coreos.com          # 있으면 true, 없으면 false
+MON=true
+
+# 치환 결과를 먼저 눈으로 확인
+sed -e "s#REPO_URL#${REPO_URL}#g" \
+    -e "s#TARGET_REVISION#${TARGET_REVISION}#g" \
+    -e "s#MONITORING_ENABLED#${MON}#g" \
+    deploy/argocd/root-app.yaml
+
+# 문제없으면 그대로 kubectl에 넘긴다 (-f - 는 stdin에서 읽기)
+sed -e "s#REPO_URL#${REPO_URL}#g" \
+    -e "s#TARGET_REVISION#${TARGET_REVISION}#g" \
+    -e "s#MONITORING_ENABLED#${MON}#g" \
+    deploy/argocd/root-app.yaml | kubectl apply -f -
+```
+
+```bash
+# 5) 상태 확인 (잠시 후 root, data-dev, payment-apps-dev, monitoring-dashboards(MON=true일 때)가 Synced/Healthy)
 kubectl get applications -n argocd -w
 ```
+UI: http://argocd.localtest.me
 
 ### GitOps로 변경 반영하기
 ```bash

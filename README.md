@@ -1,6 +1,6 @@
 # K8s Lab: 비동기 결제 플랫폼
 
-Kubernetes 학습용 토이 프로젝트입니다. 실무에서 흔히 쓰는 K8s 컴포넌트를 한 번씩 모두 사용하도록 설계했습니다.
+Kubernetes 학습용 토이 프로젝트입니다. 실무에서 흔히 쓰는 K8s 컴포넌트를 한 번씩 모두 사용하도록 구성했습니다.
 
 ```
 브라우저 → Traefik Ingress → frontend (nginx)
@@ -35,25 +35,26 @@ flowchart LR
 
 ## 빠른 시작 (WSL Ubuntu에서)
 
-```bash
-# 0. 사전 준비: docs/01-environments.md (WSL2, .wslconfig 메모리, Docker Desktop WSL Integration)
+스크립트 없이 각 문서의 명령을 **한 줄씩 직접 실행**하며 진행합니다.
 
-./scripts/00-setup-wsl.sh        # kubectl, kind, helm, k9s 설치
-./scripts/10-cluster-up.sh       # kind 클러스터 (control-plane 1 + worker 2)
-./scripts/20-platform.sh         # Traefik, metrics-server, Prometheus/Grafana, Argo CD
-./scripts/30-build-load.sh       # 앱 이미지 빌드 → kind 노드에 적재
-./scripts/40-deploy-manual.sh    # 데이터 계층(Kustomize) + 앱(Helm) 배포
-```
+| 단계 | 내용 | 문서 |
+|---|---|---|
+| 0 | WSL2, `.wslconfig` 메모리, Docker Desktop WSL Integration | [01 §3.1~3.4](docs/01-environments.md#3-windows-로컬-환경-준비-1회) |
+| 1 | kubectl, kind, helm, k9s 설치 | [01 §3.5](docs/01-environments.md#35-cli-도구-설치-kubectl-kind-helm-k9s) |
+| 2 | kind 클러스터 생성 (control-plane 1 + worker 2) | [01 §3.6](docs/01-environments.md#36-kind-클러스터-생성-control-plane-1--worker-2) |
+| 3 | Traefik, metrics-server, Prometheus/Grafana, Argo CD (Helm) | [01 §4](docs/01-environments.md#4-플랫폼-설치-helm) |
+| 4 | 앱 이미지 빌드 → kind 노드에 적재 | [06 Lab 2-1](docs/06-labs.md#2-1-이미지-빌드--kind-노드에-적재) |
+| 5 | 데이터 계층(Kustomize) + 앱(Helm) 배포 | [06 Lab 2-2~2-6](docs/06-labs.md#lab-2-배포하고-e2e-확인) |
 
 | URL | 설명 |
 |---|---|
 | http://payment.localtest.me | 결제 데모 화면 |
 | http://grafana.localtest.me | Grafana (admin / admin) → "K8s Lab - Payment Platform" |
-| http://argocd.localtest.me | Argo CD (admin / `20-platform.sh` 출력 비밀번호) |
+| http://argocd.localtest.me | Argo CD (admin / [01 §4.5](docs/01-environments.md#45-argo-cd--선택)에서 확인한 비밀번호) |
 
-GitOps로 전환: GitHub에 push → `REPO_URL=https://github.com/<you>/k8s-lab.git ./scripts/50-gitops.sh`
+GitOps로 전환: GitHub에 push → [05 §4 시작하기](docs/05-tooling.md#시작하기)
 
-정리: `./scripts/99-teardown.sh`
+정리: `kind delete cluster --name k8s-lab`
 
 > K8s 없이 앱만 먼저 확인하려면: `cd apps && docker compose up --build` → http://localhost:8088
 
@@ -71,7 +72,6 @@ deploy/
   helm/payment-apps/   앱 3개 Helm 차트 (values-dev / values-prod)
   monitoring/          Grafana 대시보드 ConfigMap
   argocd/              App of Apps (Helm 차트) + root-app.yaml
-scripts/               00~99 단계별 bash 스크립트
 docs/                  학습 문서 (mermaid 다이어그램 포함)
 ```
 

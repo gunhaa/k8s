@@ -331,13 +331,13 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-  S0["00-setup-wsl.sh<br/>kubectl · kind · helm"] --> S1["10-cluster-up.sh<br/>kind 3노드"]
-  S1 --> S2["20-platform.sh<br/>Traefik · metrics-server<br/>kube-prometheus-stack · ArgoCD"]
-  S2 --> S3["30-build-load.sh<br/>docker build → kind load"]
+  S0["도구 설치 (01 §3.5)<br/>kubectl · kind · helm"] --> S1["클러스터 생성 (01 §3.6)<br/>kind 3노드"]
+  S1 --> S2["플랫폼 설치 (01 §4)<br/>Traefik · metrics-server<br/>kube-prometheus-stack · ArgoCD"]
+  S2 --> S3["이미지 (06 Lab 2-1)<br/>docker build → kind load"]
   S3 --> CHOICE{"배포 방식"}
-  CHOICE -->|"학습 1단계"| M["40-deploy-manual.sh<br/>kubectl apply -k (data)<br/>helm upgrade --install (apps)"]
-  CHOICE -->|"학습 2단계"| G["50-gitops.sh<br/>ArgoCD root Application 등록"]
-  M -.->|"익숙해지면 전환<br/>(스크립트가 helm 릴리스 정리)"| G
+  CHOICE -->|"학습 1단계"| M["수동 배포 (06 Lab 2-2~2-5)<br/>kubectl apply -k (data)<br/>helm upgrade --install (apps)"]
+  CHOICE -->|"학습 2단계"| G["GitOps (05 §4)<br/>ArgoCD root Application 등록"]
+  M -.->|"익숙해지면 전환<br/>(helm uninstall 후 root 등록)"| G
 ```
 
 ### 9-2. GitOps 변경 반영 흐름 (이미지 업데이트)
@@ -352,7 +352,7 @@ sequenceDiagram
   participant K8s as 클러스터
 
   Dev->>Dev: 코드 수정 + git commit
-  Dev->>Docker: ./scripts/30-build-load.sh<br/>(tag = git short sha)
+  Dev->>Docker: docker build + kind load<br/>(tag = git short sha)
   Note over Docker: 레지스트리 대신 kind 노드에 직접 적재
   Dev->>Dev: values-dev.yaml global.imageTag = abc1234
   Dev->>Git: git commit + push
